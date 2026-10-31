@@ -2,44 +2,51 @@ import pytest
 from app.domain.scoring import calculate_scores
 
 def test_stable_pressure():
-    # Идеальный график: давление ровное и близко к норме
+    # Идеальный график: 3 дня подряд давление 760 (ровно норма)
     series = [
-        {"date": "2026-10-31", "pressure": 745.0},
-        {"date": "2026-11-01", "pressure": 745.0},
-        {"date": "2026-11-02", "pressure": 745.0},
+        {"date": "2026-10-31", "pressure": 760.0},
+        {"date": "2026-11-01", "pressure": 760.0},
+        {"date": "2026-11-02", "pressure": 760.0},
     ]
     scores = calculate_scores(series)
-    assert scores[1]["score"] == 100
+    # Третий день (индекс 2) должен иметь 100 баллов, так как есть история за 3 дня и нет отклонений
     assert scores[2]["score"] == 100
+    assert "стабильно 3 дня" in scores[2]["reason"]
 
 def test_sharp_drop():
-    # Резкое падение на 10 мм И сильное отклонение от нормы
+    # Резкое падение на 10 мм И сильное отклонение от нормы (но теперь нужно 3 дня для тренда)
     series = [
-        {"date": "2026-10-31", "pressure": 755.0},
-        {"date": "2026-11-01", "pressure": 735.0},  # 735 сильно отличается от 745
+        {"date": "2026-10-31", "pressure": 765.0},
+        {"date": "2026-11-01", "pressure": 765.0},
+        {"date": "2026-11-02", "pressure": 750.0}, # Резкое падение и отклонение
     ]
     scores = calculate_scores(series)
-    # 100 - 30 (за скачок) - 30 (сильное отклонение от нормы) = 40
-    assert scores[1]["score"] < 60
-    assert "резкий скачок" in scores[1]["reason"]
+    # 100 - 40 (сильный разброс) - 15 (отклонение) = 45
+    assert scores[2]["score"] < 60
+    assert "сильный разброс" in scores[2]["reason"]
 
 def test_smooth_decrease():
-    # Плавное снижение на 1.5 мм в сутки - должно быть высоко
+    # Плавное снижение на 1.5 мм в сутки (в пределах нормы)
     series = [
-        {"date": "2026-10-31", "pressure": 746.0},
-        {"date": "2026-11-01", "pressure": 744.5},
+        {"date": "2026-10-31", "pressure": 762.0},
+        {"date": "2026-11-01", "pressure": 760.5},
+        {"date": "2026-11-02", "pressure": 759.0},
     ]
     scores = calculate_scores(series)
-    # 100 - 0 (за скачок) + 5 (за плавное снижение) = 100 (так как 105 обрезается до 100)
-    assert scores[1]["score"] >= 95
+    # Разброс 3 мм (умеренный), тренд -3 (плавное снижение)
+    assert scores[2]["score"] >= 85
+    assert "плавное снижение" in scores[2]["reason"]
 
 def test_abnormal_pressure():
     # Давление стабильное, но аномально низкое (например, 720)
     series = [
         {"date": "2026-10-31", "pressure": 720.0},
         {"date": "2026-11-01", "pressure": 720.0},
+        {"date": "2026-11-02", "pressure": 720.0},
     ]
     scores = calculate_scores(series)
     # 100 - 30 (сильное отклонение) = 70
-    assert scores[1]["score"] < 75
-    assert "сильное отклонение" in scores[1]["reason"]
+    assert scores[2]["score"] < 75
+    assert "сильное отклонение" in scores[2]["reason"]
+
+#python -m pytest
