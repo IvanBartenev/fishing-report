@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Рыбалка: Прогноз давления</title>
+    <!-- Подключаем Chart.js для графиков -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f4f4f9; }
+        .controls { margin-bottom: 20px; display: flex; gap: 10px; }
+        input, select, button { padding: 8px; font-size: 16px; }
+        button { background: #007bff; color: white; border: none; cursor: pointer; border-radius: 4px; }
+        button:hover { background: #0056b3; }
+        .chart-container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+    <h2>Прогноз клева по давлению</h2>
+
+    <div class="controls">
+        <input type="text" id="city" value="Воронеж" placeholder="Город">
+        <select id="days">
+            <option value="7">7 дней</option>
+            <option value="14">14 дней</option>
+        </select>
+        <button onclick="loadReport()">Узнать</button>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="pressureChart"></canvas>
+    </div>
+
+    <script>
+        let myChart = null;
+
+        async function loadReport() {
+            const city = document.getElementById('city').value;
+            const days = document.getElementById('days').value;
+
+            // Показываем, что идет загрузка
+            document.body.style.cursor = 'wait';
+
+            try {
+                const response = await fetch(`/report?city=${encodeURIComponent(city)}&days=${days}`);
+                if (!response.ok) throw new Error("Ошибка сервера");
+
+                const data = await response.json();
+                drawChart(data);
+            } catch (error) {
+                alert("Не удалось получить данные: " + error.message);
+            } finally {
+                document.body.style.cursor = 'default';
+            }
+        }
+
+                function drawChart(data) {
+            const labels = data.days.map(d => d.date);
+            const scores = data.days.map(d => d.score);
+            const pressures = data.days.map(d => d.pressure || 760); // На случай если null
+
+            if (myChart) {
+                myChart.destroy();
+            }
+
+            const ctx = document.getElementById('pressureChart').getContext('2d');
+            myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Оценка дня (0-100)',
+                            data: scores,
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true,
+                            yAxisID: 'y' // Привязка к левой оси
+                        },
+                        {
+                            label: 'Давление (мм рт. ст.)',
+                            data: pressures,
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            backgroundColor: 'transparent',
+                            borderWidth: 2,
+                            borderDash: [5, 5], // Делаем линию пунктирной
+                            tension: 0.3,
+                            yAxisID: 'y1' // Привязка к правой оси
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    interaction: { mode: 'index', intersect: false }, // Чтобы тултип показывал обе линии
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            beginAtZero: true,
+                            max: 100,
+                            title: { display: true, text: 'Баллы за день' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            // Задаем диапазон, чтобы линия давления не улетала за края
+                            suggestedMin: 730,
+                            suggestedMax: 780,
+                            title: { display: true, text: 'Давление (мм рт. ст.)' },
+                            grid: { drawOnChartArea: false } // Убираем сетку для правой оси
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                afterBody: function(context) {
+                                    const dayData = data.days[context[0].dataIndex];
+                                    return 'Причина: ' + dayData.reason;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
