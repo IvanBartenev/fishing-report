@@ -52,10 +52,20 @@ def get_pressure(city: str, start: date, end: date) -> list[dict]:
             "timezone": "Europe/Moscow",
         }
         resp = client.get("https://api.open-meteo.com/v1/forecast", params=params)
+
+        # 1. Проверяем HTTP-статус (если API вернул 400 или 500, мы это увидим)
+        if resp.status_code != 200:
+            error_info = resp.text
+            raise ValueError(f"Open-Meteo вернул ошибку {resp.status_code}: {error_info}")
+
         data = resp.json()
 
-    # 3. Агрегируем по дням (среднее за день)
-    hourly = data["hourly"]
+        # 2. Проверяем, есть ли вообще ключ 'hourly' в ответе
+        if "hourly" not in data:
+            # Если ключа нет, значит, API вернул что-то другое (например, ошибку)
+            raise ValueError(f"Open-Meteo не вернул данные о давлении. Ответ API: {data}")
+
+        hourly = data["hourly"]
     times = hourly["time"]
     pressures = hourly["pressure_msl"]
 
