@@ -10,58 +10,57 @@ def calculate_scores(pressure_series: list[dict]) -> list[dict]:
     for i, point in enumerate(pressure_series):
         score = 100
         reasons = []
+        p_today = point["pressure"]
 
-        # 1. Оцениваем стабильность по окну в 3 дня (сегодня и два предыдущих)
-        if i >= 2:
-            p_today = point["pressure"]
+        # --- 1. Оцениваем СКАЧОК (Волатильность) ---
+        # Сравниваем только с предыдущим днем! Это самое важное для рыбы.
+        if i > 0:
             p_yesterday = pressure_series[i - 1]["pressure"]
-            p_day_before = pressure_series[i - 2]["pressure"]
+            daily_diff = abs(p_today - p_yesterday)
 
-            # Считаем общий разброс (максимальное минус минимальное за 3 дня)
-            max_p = max(p_today, p_yesterday, p_day_before)
-            min_p = min(p_today, p_yesterday, p_day_before)
-            spread = max_p - min_p
-
-            if spread > 6:
-                score -= 40
-                reasons.append(f"сильный разброс за 3 дня ({spread:.1f} мм)")
-            elif spread > 3:
+            if daily_diff > 5:
+                score -= 35
+                reasons.append(f"резкий скачок {daily_diff:.1f} мм")
+            elif daily_diff > 2.5:
                 score -= 15
-                reasons.append(f"умеренный разброс ({spread:.1f} мм)")
+                reasons.append(f"умеренный скачок {daily_diff:.1f} мм")
             else:
-                reasons.append("стабильно 3 дня")
+                reasons.append("стабильно")
 
-            # 2. Смотрим на общий тренд (куда движемся от позавчера к сегодня)
+        # --- 2. Оцениваем ТРЕНД (Направление за 2 дня) ---
+        if i >= 2:
+            p_day_before = pressure_series[i - 2]["pressure"]
             trend = p_today - p_day_before
-            if -4.0 <= trend < -1.0:
-                score += 5
-                reasons.append("плавное снижение")
-            elif trend <= -4.0:
-                score -= 20
-                reasons.append("резкое падение")
 
-        else:
-            # Для первых двух дней истории еще нет, оцениваем мягко
-            if i > 0:
-                diff = abs(point["pressure"] - pressure_series[i - 1]["pressure"])
-                if diff > 3: score -= 15
+            # Плавное снижение (от -1 до -3 мм за 2 дня) - это идеал
+            if -3.0 <= trend < -0.5:
+                reasons.append("плавное снижение")
+            # Резкое падение (больше 4 мм за 2 дня) - рыба замирает
+            elif trend < -4.0:
+                score -= 20
+                reasons.append("затяжное падение")
+            # Активный рост - тоже плохо
+            elif trend >= 4.0:
+                score -= 20
+                reasons.append("активный рост")
+        elif i == 1:
             reasons.append("мало данных для тренда")
 
-        # 3. Отклонение от нормы (без изменений)
-        deviation = abs(point["pressure"] - NORMAL_PRESSURE)
+        # --- 3. Отклонение от нормы ---
+        deviation = abs(p_today - NORMAL_PRESSURE)
         if deviation > 15:
             score -= 30
-            reasons.append(f"сильное отклонение ({point['pressure']} мм)")
+            reasons.append(f"сильное отклонение от нормы")
         elif deviation > 8:
             score -= 15
-            reasons.append(f"отклонение ({point['pressure']} мм)")
+            reasons.append(f"отклонение от нормы")
 
         final_score = max(0, min(100, score))
 
         result.append({
             "date": point["date"],
             "score": final_score,
-            "reason": ", ".join(reasons) if reasons else "отличный день"
+            "reason": ", ".join(reasons) if reasons else "идеально"
         })
 
     return result

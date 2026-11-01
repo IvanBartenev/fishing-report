@@ -57,4 +57,4 @@ def report(city: str = Query(...), days: int = Query(7, ge=1, le=30)):
         "days": filtered_days
     }
 
-#uvicorn app.main:app --reload --host 127.0.0.1 --port 8001 - запуск в терминале
+# uvicorn app.main:app --reload --host 127.0.0.1 --port 8001                           - запуск в терминале
