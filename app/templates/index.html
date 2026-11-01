@@ -2,130 +2,451 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Рыбалка: Прогноз давления</title>
-    <!-- Подключаем Chart.js для графиков -->
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fishing Report — прогноз условий для рыбалки</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f4f4f9; }
-        .controls { margin-bottom: 20px; display: flex; gap: 10px; }
-        input, select, button { padding: 8px; font-size: 16px; }
-        button { background: #007bff; color: white; border: none; cursor: pointer; border-radius: 4px; }
-        button:hover { background: #0056b3; }
-        .chart-container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        :root {
+            color-scheme: light;
+            --ink: #182230;
+            --muted: #64748b;
+            --line: #e2e8f0;
+            --panel: #ffffff;
+            --surface: #f4f7fb;
+            --accent: #1677c8;
+            --good: #16845b;
+            --warn: #b7791f;
+            --bad: #c24141;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            max-width: 980px; margin: 0 auto; padding: 24px 18px 48px;
+            color: var(--ink); background: var(--surface);
+        }
+        h1 { margin: 0 0 6px; font-size: clamp(24px, 4vw, 32px); }
+        .subtitle { color: var(--muted); margin: 0 0 22px; }
+        .controls {
+            display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px;
+        }
+        input, select, button {
+            min-height: 42px; padding: 9px 12px; font: inherit; border-radius: 9px;
+        }
+        input, select { border: 1px solid var(--line); background: white; }
+        input { flex: 1 1 220px; }
+        select { flex: 0 1 130px; }
+        button {
+            border: 0; background: var(--accent); color: white; cursor: pointer;
+            font-weight: 600;
+        }
+        button:hover { filter: brightness(.94); }
+        button:disabled { opacity: .55; cursor: wait; }
+        .panel, .day-card, .hourly-panel {
+            background: var(--panel); border: 1px solid var(--line);
+            border-radius: 14px; box-shadow: 0 3px 12px rgba(15, 23, 42, .04);
+        }
+        .panel { padding: 16px; margin-bottom: 18px; }
+        .section-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin: 0 0 12px; }
+        .section-heading h2 { margin:0; font-size:19px; }
+        .hint { color:var(--muted); font-size:13px; }
+        .chart-wrap { position:relative; height:320px; }
+        .days-list { display:grid; gap:10px; }
+        .day-card { overflow:hidden; }
+        .day-toggle {
+            width:100%; background:transparent; color:var(--ink); text-align:left;
+            display:flex; align-items:center; justify-content:space-between; gap:12px;
+            padding:15px 16px; border-radius:0; min-height:unset;
+        }
+        .day-toggle:hover { background:#f8fafc; filter:none; }
+        .day-main { min-width:0; }
+        .day-date { font-weight:700; display:block; margin-bottom:4px; }
+        .day-reason { color:var(--muted); font-size:13px; display:block; overflow-wrap:anywhere; }
+        .day-metrics { display:flex; align-items:center; gap:14px; white-space:nowrap; }
+        .score { font-size:23px; font-weight:750; font-variant-numeric:tabular-nums; }
+        .pressure { color:var(--muted); font-size:13px; }
+        .chevron { color:var(--muted); transition:transform .15s; }
+        .day-card.open .chevron { transform:rotate(180deg); }
+        .hourly-panel { display:none; padding:15px; border:0; border-top:1px solid var(--line); border-radius:0; box-shadow:none; }
+        .day-card.open .hourly-panel { display:block; }
+        .hourly-status { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+        .confidence { font-size:13px; font-weight:650; }
+        .confidence.high { color:var(--good); }
+        .confidence.medium { color:var(--warn); }
+        .confidence.low { color:var(--bad); }
+        .confidence.unavailable { color:var(--muted); }
+        .confidence-note { color:var(--muted); font-size:12px; margin:8px 0 0; }
+        .hourly-chart-wrap { height:280px; position:relative; }
+        .loading, .error, .empty { padding:16px; color:var(--muted); }
+        .error { color:#a52a2a; background:#fff7f7; border:1px solid #f3caca; border-radius:10px; }
+        .retry { margin-top:10px; }
+        .footnote { color:var(--muted); font-size:12px; line-height:1.5; margin-top:14px; }
+        @media (max-width:600px) {
+            body { padding:18px 12px 36px; }
+            .chart-wrap { height:280px; }
+            .day-toggle { align-items:flex-start; padding:13px 12px; }
+            .day-metrics { gap:8px; flex-direction:column; align-items:flex-end; }
+            .score { font-size:21px; }
+            .pressure { font-size:12px; }
+            .hourly-chart-wrap { height:260px; }
+        }
     </style>
 </head>
 <body>
-    <h2>Прогноз клева по давлению</h2>
+    <header>
+        <h1>Fishing Report</h1>
+        <p class="subtitle">Прогноз атмосферного давления и расчётная оценка условий для рыбалки</p>
+    </header>
 
     <div class="controls">
-        <input type="text" id="city" value="Воронеж" placeholder="Город">
-        <select id="days">
+        <input type="text" id="city" value="Воронеж" placeholder="Город" aria-label="Город">
+        <select id="days" aria-label="Период прогноза">
             <option value="7">7 дней</option>
             <option value="14">14 дней</option>
         </select>
-        <button onclick="loadReport()">Узнать</button>
+        <button id="loadButton" onclick="loadReport()">Обновить прогноз</button>
     </div>
 
-    <div class="chart-container">
-        <canvas id="pressureChart"></canvas>
-    </div>
+    <section class="panel">
+        <div class="section-heading">
+            <h2>Общий прогноз</h2>
+            <span class="hint">Дневная оценка и давление</span>
+        </div>
+        <div class="chart-wrap"><canvas id="pressureChart"></canvas></div>
+    </section>
+
+    <section class="panel">
+        <div class="section-heading">
+            <h2>Почасовой анализ</h2>
+            <span class="hint">Первые 3 дня · нажмите на день</span>
+        </div>
+        <div id="daysList" class="days-list">
+            <div class="empty">Загрузите прогноз, чтобы увидеть карточки дней.</div>
+        </div>
+        <p class="footnote">
+            Почасовой индекс — расчётная эвристика по динамике давления, а не вероятность поклёвки.
+            Диапазон на графике отражает разброс ансамблевых сценариев и пока не является
+            статистически откалиброванным интервалом точности.
+        </p>
+    </section>
 
     <script>
         let myChart = null;
+        let hourlyChart = null;
+        let currentReport = null;
+        let openDate = null;
+        let hourlyRequestToken = 0;
+        const hourlyCache = new Map();
+
+        const confidenceLabels = {
+            high: "Высокая согласованность сценариев",
+            medium: "Средняя согласованность сценариев",
+            low: "Низкая согласованность сценариев",
+            unavailable: "Оценка уверенности недоступна"
+        };
+
+        function formatDate(dateString) {
+            const date = new Date(dateString + "T12:00:00");
+            return new Intl.DateTimeFormat("ru-RU", {
+                weekday: "long", day: "numeric", month: "long"
+            }).format(date);
+        }
 
         async function loadReport() {
-            const city = document.getElementById('city').value;
-            const days = document.getElementById('days').value;
+            const city = document.getElementById("city").value.trim();
+            const days = document.getElementById("days").value;
+            const button = document.getElementById("loadButton");
+            if (!city) {
+                alert("Введите название города.");
+                return;
+            }
 
-            // Показываем, что идет загрузка
-            document.body.style.cursor = 'wait';
+            button.disabled = true;
+            button.textContent = "Загрузка…";
+            document.getElementById("daysList").innerHTML = '<div class="loading">Загружаем дневной прогноз…</div>';
 
             try {
                 const response = await fetch(`/report?city=${encodeURIComponent(city)}&days=${days}`);
-                if (!response.ok) throw new Error("Ошибка сервера");
-
+                if (!response.ok) throw new Error(`Сервер вернул ошибку ${response.status}`);
                 const data = await response.json();
+                currentReport = data;
+                hourlyRequestToken += 1;
+                if (hourlyChart) {
+                    hourlyChart.destroy();
+                    hourlyChart = null;
+                }
+                openDate = null;
+                hourlyCache.clear();
                 drawChart(data);
+                renderDayCards(data);
             } catch (error) {
-                alert("Не удалось получить данные: " + error.message);
+                document.getElementById("daysList").innerHTML =
+                    `<div class="error">Не удалось получить прогноз: ${escapeHtml(error.message)}</div>`;
             } finally {
-                document.body.style.cursor = 'default';
+                button.disabled = false;
+                button.textContent = "Обновить прогноз";
             }
         }
 
-                function drawChart(data) {
-            const labels = data.days.map(d => d.date);
-            const scores = data.days.map(d => d.score);
-            const pressures = data.days.map(d => d.pressure || 760); // На случай если null
+        function drawChart(data) {
+            const labels = data.days.map(day => day.date);
+            const scores = data.days.map(day => day.score);
+            // Null must remain a gap; do not substitute a fabricated 760 mmHg.
+            const pressures = data.days.map(day => day.pressure ?? null);
 
-            if (myChart) {
-                myChart.destroy();
-            }
-
-            const ctx = document.getElementById('pressureChart').getContext('2d');
+            if (myChart) myChart.destroy();
+            const ctx = document.getElementById("pressureChart").getContext("2d");
             myChart = new Chart(ctx, {
-                type: 'line',
+                type: "line",
                 data: {
-                    labels: labels,
+                    labels,
                     datasets: [
                         {
-                            label: 'Оценка дня (0-100)',
-                            data: scores,
-                            borderColor: 'rgba(75, 192, 192, 1)',
-                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                            borderWidth: 2,
-                            tension: 0.3,
-                            fill: true,
-                            yAxisID: 'y' // Привязка к левой оси
+                            label: "Оценка дня (0–100)", data: scores,
+                            borderColor: "#16845b", backgroundColor: "rgba(22,132,91,.12)",
+                            borderWidth: 2, tension: .3, fill: true, yAxisID: "y"
                         },
                         {
-                            label: 'Давление (мм рт. ст.)',
-                            data: pressures,
-                            borderColor: 'rgba(255, 99, 132, 1)',
-                            backgroundColor: 'transparent',
-                            borderWidth: 2,
-                            borderDash: [5, 5], // Делаем линию пунктирной
-                            tension: 0.3,
-                            yAxisID: 'y1' // Привязка к правой оси
+                            label: "Давление (мм рт. ст.)", data: pressures,
+                            borderColor: "#d65b62", backgroundColor: "transparent",
+                            borderWidth: 2, borderDash: [5, 4], tension: .3,
+                            spanGaps: false, yAxisID: "y1"
                         }
                     ]
                 },
                 options: {
-                    responsive: true,
-                    interaction: { mode: 'index', intersect: false }, // Чтобы тултип показывал обе линии
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: "index", intersect: false },
                     scales: {
-                        y: {
-                            type: 'linear',
-                            display: true,
-                            position: 'left',
-                            beginAtZero: true,
-                            max: 100,
-                            title: { display: true, text: 'Баллы за день' }
-                        },
-                        y1: {
-                            type: 'linear',
-                            display: true,
-                            position: 'right',
-                            // Задаем диапазон, чтобы линия давления не улетала за края
-                            suggestedMin: 730,
-                            suggestedMax: 780,
-                            title: { display: true, text: 'Давление (мм рт. ст.)' },
-                            grid: { drawOnChartArea: false } // Убираем сетку для правой оси
+                        y: { position: "left", min: 0, max: 100,
+                            title: { display: true, text: "Оценка дня" } },
+                        y1: { position: "right", suggestedMin: 730, suggestedMax: 780,
+                            title: { display: true, text: "Давление, мм рт. ст." },
+                            grid: { drawOnChartArea: false } }
+                    },
+                    plugins: { tooltip: { callbacks: {
+                        afterBody(items) {
+                            const day = data.days[items[0].dataIndex];
+                            return day?.reason ? `Причина: ${day.reason}` : "";
                         }
+                    } } }
+                }
+            });
+        }
+
+        function renderDayCards(data) {
+            const container = document.getElementById("daysList");
+            const firstThree = data.days.slice(0, 3);
+            if (!firstThree.length) {
+                container.innerHTML = '<div class="empty">Нет дневных данных для отображения.</div>';
+                return;
+            }
+
+            container.innerHTML = "";
+            firstThree.forEach(day => {
+                const card = document.createElement("article");
+                card.className = "day-card";
+                card.dataset.date = day.date;
+
+                const toggle = document.createElement("button");
+                toggle.className = "day-toggle";
+                toggle.type = "button";
+                toggle.setAttribute("aria-expanded", "false");
+                toggle.innerHTML = `
+                    <span class="day-main">
+                        <span class="day-date">${escapeHtml(formatDate(day.date))}</span>
+                        <span class="day-reason">${escapeHtml(day.reason || "Причины не указаны")}</span>
+                    </span>
+                    <span class="day-metrics">
+                        <span class="score">${Number(day.score)}<small>/100</small></span>
+                        <span class="pressure">${day.pressure == null ? "Давление: нет данных" :
+                            `${Number(day.pressure).toFixed(1)} мм`}</span>
+                        <span class="chevron" aria-hidden="true">⌄</span>
+                    </span>`;
+                toggle.addEventListener("click", () => toggleHourly(day.date, card));
+                const panel = document.createElement("div");
+                panel.className = "hourly-panel";
+                panel.id = `hourly-${day.date}`;
+                panel.innerHTML = '<div class="loading">Почасовой график ещё не загружен.</div>';
+                card.append(toggle, panel);
+                container.appendChild(card);
+            });
+        }
+
+        async function toggleHourly(dateString, selectedCard) {
+            if (openDate === dateString) {
+                hourlyRequestToken += 1; // Ignore any request still in flight.
+                selectedCard.classList.remove("open");
+                selectedCard.querySelector(".day-toggle").setAttribute("aria-expanded", "false");
+                if (hourlyChart) {
+                    hourlyChart.destroy();
+                    hourlyChart = null;
+                }
+                openDate = null;
+                return;
+            }
+
+            hourlyRequestToken += 1;
+            const requestToken = hourlyRequestToken;
+            if (hourlyChart) {
+                hourlyChart.destroy();
+                hourlyChart = null;
+            }
+            document.querySelectorAll(".day-card.open").forEach(card => {
+                card.classList.remove("open");
+                card.querySelector(".day-toggle").setAttribute("aria-expanded", "false");
+            });
+            openDate = dateString;
+            selectedCard.classList.add("open");
+            selectedCard.querySelector(".day-toggle").setAttribute("aria-expanded", "true");
+            await loadHourlyReport(dateString, requestToken);
+        }
+
+        async function loadHourlyReport(dateString, requestToken = hourlyRequestToken) {
+            const panel = document.getElementById(`hourly-${dateString}`);
+            if (!panel) return;
+            const city = document.getElementById("city").value.trim();
+
+            if (hourlyCache.has(dateString)) {
+                if (openDate === dateString && requestToken === hourlyRequestToken) {
+                    renderHourlyReport(panel, hourlyCache.get(dateString), dateString);
+                }
+                return;
+            }
+
+            panel.innerHTML = '<div class="loading">Загружаем почасовой прогноз и ансамблевые сценарии…</div>';
+            try {
+                const response = await fetch(
+                    `/report/hourly?city=${encodeURIComponent(city)}&date=${encodeURIComponent(dateString)}`
+                );
+                const payload = await response.json();
+                if (!response.ok) {
+                    const detail = payload.detail || `Ошибка ${response.status}`;
+                    throw new Error(detail);
+                }
+                hourlyCache.set(dateString, payload);
+                // A slower response for a previously selected day must not
+                // overwrite the chart belonging to the currently open day.
+                if (openDate !== dateString || requestToken !== hourlyRequestToken) return;
+                renderHourlyReport(panel, payload, dateString);
+            } catch (error) {
+                if (openDate !== dateString || requestToken !== hourlyRequestToken) return;
+                panel.innerHTML = `
+                    <div class="error">Не удалось загрузить почасовой прогноз: ${escapeHtml(error.message)}
+                        <br><button class="retry" type="button">Повторить</button>
+                    </div>`;
+                panel.querySelector(".retry").addEventListener("click", () =>
+                    loadHourlyReport(dateString, hourlyRequestToken));
+            }
+        }
+
+        function renderHourlyReport(panel, data, dateString) {
+            panel.innerHTML = `
+                <div class="hourly-status">
+                    <strong>${escapeHtml(formatDate(data.date))} · почасовая динамика</strong>
+                    <span class="confidence ${escapeHtml(data.confidence.level)}">
+                        ${escapeHtml(confidenceLabels[data.confidence.level] || confidenceLabels.unavailable)}
+                    </span>
+                </div>
+                <div class="hourly-chart-wrap"><canvas id="hourlyChart-${escapeHtml(dateString)}"></canvas></div>
+                <p class="confidence-note" id="confidenceNote"></p>`;
+
+            const confidence = data.confidence;
+            const note = panel.querySelector("#confidenceNote");
+            if (confidence.available) {
+                note.textContent =
+                    `Модель: ${confidence.model || "не указана"}. ` +
+                    `Участников: ${confidence.member_count}. ` +
+                    `Медианный разброс 10–90%: ${confidence.median_spread} баллов. ` +
+                    `Это согласованность сценариев, не вероятность клёва.`;
+            } else {
+                note.textContent =
+                    "Ансамблевые данные сейчас недоступны. Показан основной почасовой прогноз без зоны неопределённости.";
+            }
+            const canvas = panel.querySelector("canvas");
+            drawHourlyChart(data, canvas);
+        }
+
+        function drawHourlyChart(data, canvas) {
+            if (hourlyChart) {
+                hourlyChart.destroy();
+                hourlyChart = null;
+            }
+            const hours = data.hours || [];
+            const labels = hours.map(point => point.time.slice(11, 16));
+            const scores = hours.map(point => point.score);
+            const pressures = hours.map(point => point.pressure ?? null);
+            const lower = hours.map(point => point.score_lower ?? null);
+            const upper = hours.map(point => point.score_upper ?? null);
+            const hasBand = lower.some(value => value !== null) && upper.some(value => value !== null);
+
+            const datasets = [];
+            if (hasBand) {
+                datasets.push({
+                    label: "Нижняя граница 10%", data: lower,
+                    borderColor: "rgba(22,119,200,0)", backgroundColor: "rgba(22,119,200,.13)",
+                    pointRadius: 0, borderWidth: 0, fill: "+1", yAxisID: "y"
+                });
+                datasets.push({
+                    label: "Верхняя граница 90%", data: upper,
+                    borderColor: "rgba(22,119,200,0)", backgroundColor: "rgba(22,119,200,0)",
+                    pointRadius: 0, borderWidth: 0, fill: false, yAxisID: "y"
+                });
+            }
+            datasets.push({
+                label: "Индекс условий (0–100)", data: scores,
+                borderColor: "#16845b", backgroundColor: "rgba(22,132,91,.08)",
+                borderWidth: 2.5, pointRadius: 2, tension: .25, fill: false, yAxisID: "y"
+            });
+            datasets.push({
+                label: "Давление (мм рт. ст.)", data: pressures,
+                borderColor: "#d65b62", borderWidth: 2, borderDash: [5, 4],
+                pointRadius: 1, tension: .2, fill: false, yAxisID: "y1"
+            });
+
+            if (!canvas || !canvas.isConnected) return;
+            hourlyChart = new Chart(canvas.getContext("2d"), {
+                type: "line",
+                data: { labels, datasets },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: "index", intersect: false },
+                    scales: {
+                        y: { min: 0, max: 100, position: "left",
+                            title: { display: true, text: "Индекс условий" } },
+                        y1: { position: "right", suggestedMin: 730, suggestedMax: 780,
+                            title: { display: true, text: "Давление, мм рт. ст." },
+                            grid: { drawOnChartArea: false } },
+                        x: { title: { display: true, text: "Время (Europe/Moscow)" } }
                     },
                     plugins: {
-                        tooltip: {
-                            callbacks: {
-                                afterBody: function(context) {
-                                    const dayData = data.days[context[0].dataIndex];
-                                    return 'Причина: ' + dayData.reason;
-                                }
+                        legend: { labels: {
+                            filter(item) {
+                                return !["Нижняя граница 10%", "Верхняя граница 90%"].includes(item.text);
                             }
-                        }
+                        } },
+                        tooltip: { callbacks: {
+                            afterBody(items) {
+                                const point = hours[items[0].dataIndex];
+                                const lines = [`Причина: ${point.reason || "не указана"}`];
+                                if (point.score_lower != null && point.score_upper != null) {
+                                    lines.push(`Диапазон ансамбля: ${point.score_lower}–${point.score_upper}`);
+                                }
+                                return lines;
+                            }
+                        } }
                     }
                 }
             });
         }
+
+        function escapeHtml(value) {
+            return String(value).replace(/[&<>"']/g, character => ({
+                "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+            })[character]);
+        }
+
+        // Initial report is loaded automatically for the default city.
+        loadReport();
     </script>
 </body>
 </html>

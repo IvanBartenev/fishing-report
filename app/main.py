@@ -4,8 +4,10 @@ from fastapi.templating import Jinja2Templates
 from datetime import date, timedelta
 from app.providers.open_meteo import get_pressure
 from app.domain.scoring import calculate_scores
+from app.api.hourly import router as hourly_router
 
 app = FastAPI(title="Fishing Report")
+app.include_router(hourly_router)
 
 # Указываем папку с HTML-шаблонами
 templates = Jinja2Templates(directory="app/templates")

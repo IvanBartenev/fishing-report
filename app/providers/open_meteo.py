@@ -5,6 +5,49 @@ from app.cache.memory import get_cache, set_cache
 # Норма давления для Воронежа (можно вынести в конфиг позже)
 NORMAL_PRESSURE = 760
 
+
+def resolve_city(city: str, client: httpx.Client | None = None) -> tuple[float, float]:
+    """Resolve a Russian/English city name to latitude and longitude.
+
+    This helper is shared by the hourly and ensemble providers. The Moscow
+    timezone remains a deliberate product-wide setting, not a geocoding result.
+    """
+    aliases = {
+        "питер": "Санкт-Петербург",
+        "спб": "Санкт-Петербург",
+        "мск": "Москва",
+        "екб": "Екатеринбург",
+    }
+    normalized = city.strip().lower()
+    actual_city = aliases.get(normalized, city.strip())
+    cache_key = f"geocode:{actual_city.lower()}"
+    cached = get_cache(cache_key)
+    if cached is not None:
+        return cached["latitude"], cached["longitude"]
+
+    owns_client = client is None
+    http_client = client or httpx.Client(timeout=10.0)
+    try:
+        response = http_client.get(
+            "https://geocoding-api.open-meteo.com/v1/search",
+            params={"name": actual_city, "count": 1, "language": "ru"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+    finally:
+        if owns_client:
+            http_client.close()
+
+    results = payload.get("results") or []
+    if not results:
+        raise ValueError(f"Город не найден: {city}")
+    coordinates = {
+        "latitude": float(results[0]["latitude"]),
+        "longitude": float(results[0]["longitude"]),
+    }
+    set_cache(cache_key, coordinates)
+    return coordinates["latitude"], coordinates["longitude"]
+
 def get_pressure(city: str, start: date, end: date) -> list[dict]:
     """
     Возвращает список: [{"date": "2026-10-30", "pressure": 745.2}, ...]
